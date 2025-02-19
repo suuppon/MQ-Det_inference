@@ -102,34 +102,3 @@ def print_class_distribution(images):
     for class_id in sorted_classes:
         num_queries = len(images[class_id])
         print(f" - Class {class_id}: {num_queries} queries")
-
-def save_query_bank(query_images):
-    """
-    Save the extracted query images based on the configuration.
-    Handles both single-GPU and multi-GPU scenarios.
-    """
-    if cfg.num_gpus > 1:
-        global_rank = get_rank()
-        save_name = 'MODEL/{}_query_{}_pool{}_{}{}_rank{}.pth'.format(
-            cfg.VISION_QUERY.DATASET_NAME if cfg.VISION_QUERY.DATASET_NAME else cfg.DATASETS.TRAIN[0].split('_')[0],
-            cfg.VISION_QUERY.MAX_QUERY_NUMBER,
-            cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION,
-            'sel' if cfg.VISION_QUERY.SELECT_FPN_LEVEL else 'all',
-            cfg.VISION_QUERY.QUERY_ADDITION_NAME,
-            global_rank
-        )
-    else:
-        if cfg.VISION_QUERY.QUERY_BANK_SAVE_PATH != '':
-            save_name = cfg.VISION_QUERY.QUERY_BANK_SAVE_PATH
-        else:
-            save_name = 'MODEL/{}_query_{}_pool{}_{}{}.pth'.format(
-                cfg.VISION_QUERY.DATASET_NAME if cfg.VISION_QUERY.DATASET_NAME else cfg.DATASETS.TRAIN[0].split('_')[0],
-                cfg.VISION_QUERY.MAX_QUERY_NUMBER,
-                cfg.MODEL.ROI_BOX_HEAD.POOLER_RESOLUTION,
-                'sel' if cfg.VISION_QUERY.SELECT_FPN_LEVEL else 'all',
-                cfg.VISION_QUERY.QUERY_ADDITION_NAME
-            )
-
-    print(f"💾 Saving extracted queries to: {save_name}")
-    torch.save(query_images, save_name)
-    print("✅ Query Bank saved successfully!")

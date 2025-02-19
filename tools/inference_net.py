@@ -4,6 +4,7 @@ import torch
 from maskrcnn_benchmark.config import cfg
 from maskrcnn_benchmark.modeling.detector import build_detection_model
 from maskrcnn_benchmark.utils.checkpoint import DetectronCheckpointer
+from maskrcnn_benchmark.data import make_data_loader
 
 import os
 import json
@@ -42,9 +43,11 @@ class Predictor:
         query_images=defaultdict(list)
         self.features = self.extract_queries(queries, targets, query_images)
         if save_features:
-            save_query_bank(query_images)
+            save_query_bank(self.features)
 
         print("✅ Query extraction completed!")
+        # query_images : {class_num : Tensor(num_shots, 1, 256)}
+        # So query_images is a dictionary with class_num as key and a tensor of shape (num_shots, 1, 256) as value
         print_class_distribution(query_images)
     
     def predict(self, text_prompt, image_prompt, visualize=False):
@@ -73,17 +76,9 @@ def main():
                         help="Path to the weight file")
     
     
-    parser.add_argument("--coco-root", 
-                        required=True, 
+    parser.add_argument("--data_root", 
+                        default="DATASET/milcivil_fewshot/",
                         help="Path to COCO dataset root")
-    
-    parser.add_argument("--anno-path", 
-                        required=True, 
-                        help="Path to COCO annotations JSON file")
-    
-    parser.add_argument("--image-dir", 
-                        required=True, 
-                        help="Path to COCO images directory")
     
     
     parser.add_argument("--save-features",
@@ -100,6 +95,17 @@ def main():
     num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     
     cfg.num_gpus = num_gpus
+    cfg.DATA.data_root = args.data_root
+    
+    support_annotation_path = os.path.join(args.data_root, "support/annotations.json")
+    support_image_dir = os.path.join(args.data_root, "support/images")
+    query_annotation_path = os.path.join(args.data_root, "query/annotations.json")
+    query_image_dir = os.path.join(args.data_root, "query/images")
+    
+    cfg.DATA.support_annotation_path = support_annotation_path
+    cfg.DATA.support_image_dir = support_image_dir
+    cfg.DATA.query_annotation_path = query_annotation_path
+    cfg.DATA.query_image_dir = query_image_dir
     
     # 1. Load configuration file
     cfg.merge_from_file(args.config_file)
@@ -115,12 +121,13 @@ def main():
     
     predictor.set_model(model)
     
+    
     # 3. Load COCO dataset
-    with open (args.anno_path, "r") as f:
+    with open (support_annotation_path, "r") as f:
         data = json.load(f)
     
     # 4. Map image IDs to paths
-    image_id_to_path = {img["id"]: os.path.join(args.image_dir, img["file_name"]) for img in data["images"]}
+    image_id_to_path = {img["id"]: os.path.join(support_image_dir, img["file_name"]) for img in data["images"]}
     image_id_to_annotations = defaultdict(list)
 
     for ann in data["annotations"]:
@@ -136,6 +143,15 @@ def main():
     images, targets = load_images_and_targets(image_ids, image_id_to_path, image_id_to_annotations, device="cuda", category_mapping=category_mapping)
 
     predictor.set_features(images, targets, save_features=args.save_features)
+    
+    # 6. Build DataLoader from Query Images
+    query_data_loader = make_data_loader(cfg, is_train=False, is_distributed=False, inference_mode=True)
+    
+    # 7. Detect Objects in Query Images
+    #TODO: Implement This
+    # for query_images, query_targets in query_data_loader:
+    #    predictor.predict(query_images, query_targets, visualize=args.visualize)
+    
 
 if __name__ == "__main__":
     main()

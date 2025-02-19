@@ -193,6 +193,26 @@ def build_dataset_by_group(dataset_list, transforms, dataset_catalog, is_train=T
     return grouped_datasets
 
 
+def build_dataset_with_dir_path(img_dir, ann_file, transform, extra_args={}):
+    
+    args = dict(
+        root=img_dir,
+        ann_file=ann_file,
+                )
+    data = dict(
+        factory='COCODataset',
+        args=args,
+    )
+    factory = getattr(D, data["factory"])
+    
+    args = data["args"]
+    args["transforms"] = transform
+    args["remove_images_without_annotations"] = False
+    args.update(extra_args)
+    
+    dataset = factory(**args)
+    return [dataset]
+
 def make_data_sampler(dataset, shuffle, distributed, num_replicas=None, rank=None, use_random_seed=True):
     if distributed:
         return samplers.DistributedSampler(dataset, shuffle=shuffle, num_replicas=num_replicas, rank=rank,
@@ -241,7 +261,7 @@ def make_batch_data_sampler(
         )
     return batch_sampler
 
-def make_data_loader(cfg, is_train=True, is_distributed=False, num_replicas=None, rank=None, start_iter=0, is_cache=False):
+def make_data_loader(cfg, is_train=True, is_distributed=False, num_replicas=None, rank=None, start_iter=0, is_cache=False, inference_mode=False):
     num_gpus = num_replicas or get_world_size()
 
     if is_train:
@@ -424,15 +444,18 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, num_replicas=None
     else:
         extra_args['tokenizer'] = AutoTokenizer.from_pretrained(cfg.MODEL.LANGUAGE_BACKBONE.TOKENIZER_TYPE)
 
-    if isinstance(dataset_list[0], (tuple, list)):
-        datasets = build_dataset_by_group(dataset_list, transforms, DatasetCatalog, (is_train or is_cache),
-                                          class_by_group=cfg.DATASETS.ALTERNATIVE_TRAINING,
-                                          class_concat=cfg.DATASETS.CLASS_CONCAT,
-                                          extra_args=extra_args)
+    if inference_mode:
+        datasets = build_dataset_with_dir_path(cfg.DATA.query_image_dir, cfg.DATA.query_annotation_path, transforms, extra_args)
     else:
-        datasets = build_dataset(cfg, dataset_list, transforms, DatasetCatalog, (is_train or is_cache),
-                                 class_concat=cfg.DATASETS.CLASS_CONCAT,
-                                 extra_args=extra_args)
+        if isinstance(dataset_list[0], (tuple, list)):
+            datasets = build_dataset_by_group(dataset_list, transforms, DatasetCatalog, (is_train or is_cache),
+                                            class_by_group=cfg.DATASETS.ALTERNATIVE_TRAINING,
+                                            class_concat=cfg.DATASETS.CLASS_CONCAT,
+                                            extra_args=extra_args)
+        else:
+            datasets = build_dataset(cfg, dataset_list, transforms, DatasetCatalog, (is_train or is_cache),
+                                    class_concat=cfg.DATASETS.CLASS_CONCAT,
+                                    extra_args=extra_args)
 
     data_loaders = []
     for di, dataset in enumerate(datasets):

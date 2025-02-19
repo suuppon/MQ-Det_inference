@@ -999,3 +999,8 @@ _C.GROUNDINGDINO.matcher.set_cost_class = 1.0
 _C.GROUNDINGDINO.matcher.set_cost_bbox = 5.0
 _C.GROUNDINGDINO.matcher.set_cost_giou = 2.0
 _C.GROUNDINGDINO.matcher.focal_alpha = 0.25
+
+# ---------------------------------------------------------------------------- #
+# DATA
+# ---------------------------------------------------------------------------- #
+_C.DATA = CN()

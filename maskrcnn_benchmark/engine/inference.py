@@ -4,6 +4,7 @@ import logging
 import time
 import os
 import re
+import cv2
 
 import torch
 from tqdm import tqdm
@@ -760,4 +761,147 @@ def inference(
         expected_results=expected_results,
         expected_results_sigma_tol=expected_results_sigma_tol,
     )
+    return evaluate(dataset=dataset, predictions=predictions, output_folder=output_folder, **extra_args)
+
+def predict(
+    model,
+    data_loader,
+    cfg,
+    device="cuda",
+    output_folder='output',
+    visualizer=None,
+    disable_print=False,
+):
+    """
+    모델의 예측 결과를 반환하는 함수.
+    visualize=True이면 시각화 결과를 output_folder에 저장.
+    """
+    try:
+        device = torch.device(device)
+    except Exception:
+        device = device
+    num_devices = (
+        torch.distributed.get_world_size()
+        if torch.distributed.is_initialized()
+        else 1
+    )
+    logger = logging.getLogger("inference.predict")
+    start_time = time.time()
+    
+    model.eval()
+    results_dict = {}
+    cpu_device = torch.device("cpu")
+    predictions = {}
+    dataset = data_loader.dataset
+    logger.info("Start prediction on {} dataset ({} images).".format(dataset.__class__.__name__, len(dataset)))
+    
+    task = cfg.TEST.EVAL_TASK
+    if cfg.GLIPKNOW.PARALLEL_LANGUAGE_INPUT:
+        assert task == 'detection'
+        categories = dataset.categories()
+        keys = list(categories.keys())
+        keys.sort()
+        all_queries = [[categories[k] for k in keys]]
+        all_positive_map_label_to_token = [{k: [i] for i, k in enumerate(keys)}]
+    elif task == "detection":
+        all_queries, all_positive_map_label_to_token = create_queries_and_maps_from_dataset(dataset, cfg, disable_print=disable_print)
+    elif task == "grounding":
+        all_queries = [None]
+        all_positive_map_label_to_token = [None]
+    else:
+        raise ValueError("Unsupported task: {}".format(task))
+    
+    output_folder = os.path.join(output_folder, cfg.DATA.DATASET_NAME)
+    
+    for i, batch in enumerate(tqdm(data_loader)):
+        images, targets, image_ids, *_ = batch
+        images = images.to(device)
+        query_time = len(all_queries)
+        batch_outputs = []
+        for query_i in range(query_time):
+            if task == "detection":
+                captions = [all_queries[query_i] for _ in range(len(targets))]
+                positive_map_label_to_token = all_positive_map_label_to_token[query_i]
+            elif task == "grounding":
+                captions = [t.get_field("caption") for t in targets]
+                positive_map_label_to_token = None
+            with torch.no_grad():
+                output = model(images, captions=captions, positive_map=positive_map_label_to_token)
+            # output: list 형태. 각 이미지에 대해 하나의 결과
+            output = [o.to(cpu_device) for o in output]
+            batch_outputs.append(output)
+        
+        # 여러 query 결과가 있다면 첫 번째 query 결과 사용 (필요시 통합 로직 구현)
+        final_output = batch_outputs[0]
+        for img_id, output in zip(image_ids, final_output):
+            predictions[img_id] = output
+        
+        # 시각화 옵션이 켜졌다면
+        if visualizer is not None:
+            # dataset에 따라 이미지 경로 접근 방식이 다를 수 있음 (아래는 COCO/LVIS 예시)
+            image_id = dataset.ids[i]
+            try:
+                image_path = os.path.join(dataset.root, dataset.coco.loadImgs(image_id)[0]["file_name"])
+                categories = dataset.coco.dataset["categories"]
+            except Exception:
+                image_path = os.path.join(dataset.root, "dummy.jpg")
+                # 또는 LVIS 관련 코드로 수정
+            
+            # OpenCV를 사용하여 이미지 로드
+            image = cv2.imread(image_path)
+            if image is None:
+                logger.warning("Failed to load image: {}".format(image_path))
+                continue
+            
+            label_list = [cat["name"] for cat in categories if cat["name"] != "__background__"]
+            visualizer.entities = label_list
+            
+            # 배치 내 첫번째 예측 결과로 시각화 (필요시 이미지별로 수정)
+            vis_prediction = final_output[0]
+            vis_image, _ = visualizer.visualize_with_predictions(
+                image, vis_prediction, threshold=0.5,
+                alpha=0.5, box_pixel=2, text_size=0.5, text_pixel=1,
+                text_offset=10, text_offset_original=10, color="green"
+            )
+            
+            save_path = os.path.join(output_folder, "img_{}.jpg".format(i))
+            if not os.path.exists(output_folder):
+                os.makedirs(output_folder)
+            cv2.imwrite(save_path, vis_image)
+
+        output = [[row[_i] for row in batch_outputs] for _i in range(len(batch_outputs[0]))]
+        for index, i in enumerate(output):
+            output[index] = i[0].concate_box_list(i)
+            
+        results_dict.update({img_id: result for img_id, result in zip(image_ids, output)})
+    
+    if cfg.VISION_QUERY.RETURN_ATTN_GATE_VALUE:
+        attn_values = attn_values / (len(data_loader)*len(all_queries))
+        print('attn_values: ', attn_values)
+    
+    prediction = results_dict
+    
+    synchronize()
+    total_time = time.time() - start_time
+    total_time_str = str(datetime.timedelta(seconds=total_time))
+    logger.info(
+        "Total inference time: {} ({} s / img per device, on {} devices)".format(
+            total_time_str, total_time * num_devices / len(dataset), num_devices
+        )
+    )
+    
+    predictions = _accumulate_predictions_from_multiple_gpus(predictions)
+    print("Accumulated results")
+    if not is_main_process():
+        return None
+    
+    torch.save(predictions, os.path.join(output_folder, "predictions.pth"))
+    
+    extra_args = dict(
+        box_only=False,
+        iou_types=("bbox",),
+        expected_results=(),
+        expected_results_sigma_tol=4,
+    )
+
     return evaluate(dataset=dataset, predictions=predictions, output_folder=output_folder, **extra_args)

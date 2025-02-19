@@ -76,6 +76,7 @@ def split_few_shot_coco(annotations_path, images_dir, shot, output_dir):
     - output_dir: Directory to save the split dataset.
     """
     # Define support and query directories
+    output_dir = output_dir + f"_{shot}shot"
     support_dir = os.path.join(output_dir, "support")
     query_dir = os.path.join(output_dir, "query")
     support_images_dir = os.path.join(support_dir, "images")

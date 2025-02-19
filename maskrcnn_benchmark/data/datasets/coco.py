@@ -190,7 +190,7 @@ class COCODataset(CocoDetection):
             print("Override category: ", override_category)
 
         self.json_category_id_to_contiguous_id = {
-            v: i + 1 for i, v in enumerate(self.coco.getCatIds())
+            v: i for i, v in enumerate(self.coco.getCatIds())
         }
         self.contiguous_category_id_to_json_id = {
             v: k for k, v in self.json_category_id_to_contiguous_id.items()

@@ -1,74 +1,18 @@
 # Multi-modal Queried Object Detection in the Wild
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/multi-modal-queried-object-detection-in-the/few-shot-object-detection-on-odinw-13)](https://paperswithcode.com/sota/few-shot-object-detection-on-odinw-13?p=multi-modal-queried-object-detection-in-the)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/multi-modal-queried-object-detection-in-the/zero-shot-object-detection-on-lvis-v1-0)](https://paperswithcode.com/sota/zero-shot-object-detection-on-lvis-v1-0?p=multi-modal-queried-object-detection-in-the)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/multi-modal-queried-object-detection-in-the/zero-shot-object-detection-on-odinw)](https://paperswithcode.com/sota/zero-shot-object-detection-on-odinw?p=multi-modal-queried-object-detection-in-the)
+Forked from 
+[**MQ-Det**](https://github.com/YifanXu74/MQ-Det) Project for Model Inference
+
+With this project, you can perform model inference directly, not just evaluation through a config file. You can even test it with a single image!
 
 
-Official code and models for the NeurIPS 2023 paper:
-
-[**Multi-modal Queried Object Detection in the Wild**](https://arxiv.org/abs/2305.18980)
-
-Yifan Xu, Mengdan Zhang, Chaoyou Fu, Peixian Chen, Xiaoshan Yang, Ke Li, Changsheng Xu
-
-NeurIPS 2023
-
-
-MQ-Det is the first multi-modal queried open-world object detector. If you have any questions, please feel free to raise an issue or email <yifan.xu@nlpr.ia.ac.cn>.
-
-## Updates
-
-10/20/2023: Updated an instruction on modulating on customized datasets! Please refer to [CUSTOMIZED_PRETRAIN.md](CUSTOMIZED_PRETRAIN.md).
-
-10/09/2023: Complete code and models are released!
-
-09/22/2023: MQ-Det has beed accepted by NeurIPS 2023 ([Updated Verision](https://arxiv.org/abs/2305.18980)).
-
-05/30/2023: MQ-Det paper on arxiv https://arxiv.org/abs/2305.18980.
-
-05/27/2023: Finetuning-free code and models are released.
-
-05/25/2023: Project page built.
-
-## Citation
-
-If you find our work useful in your research, please consider citing:
-```
-@article{xu2024multi,
-  title={Multi-modal queried object detection in the wild},
-  author={Xu, Yifan and Zhang, Mengdan and Fu, Chaoyou and Chen, Peixian and Yang, Xiaoshan and Li, Ke and Xu, Changsheng},
-  journal={Advances in Neural Information Processing Systems},
-  volume={36},
-  year={2024}
-}
-```
-
-
-
-
-## Multi-modal Queried Object Detection
-We introduce **MQ-Det**, an efficient architecture and pre-training strategy design to utilize both textual description with open-set generalization and visual exemplars with rich description granularity as category queries, namely, **M**ulti-modal **Q**ueried object **Det**ection, for real-world detection with both open-vocabulary categories and various granularity. 
-
-<img src=".asset/method.png" width="800"> 
-
-## Method
-MQ-Det incorporates vision queries into existing well-established language-queried-only detectors.
-
-**Features**:
-
-- A plug-and-play gated class-scalable perceiver module upon the frozen detector.  Corresponding code is implemented [here](https://github.com/YifanXu74/MQ-Det/blob/5c4a739a79b04e2ba6bf6a42697bbc6bd3b67e79/maskrcnn_benchmark/modeling/language_backbone/modeling_bert_new.py#L250C2-L250C2).
-- A vision conditioned masked language prediction strategy. Corresponding code is implemented [here](https://github.com/YifanXu74/MQ-Det/blob/5c4a739a79b04e2ba6bf6a42697bbc6bd3b67e79/maskrcnn_benchmark/modeling/detector/generalized_vl_rcnn_new.py#L397-L407).
-- Compatible with most language-queried object detectors.
-
-<!-- ## TODO 
-
-- [x] Release finetuning-free inference code.
-- [x] Release checkpoints.
-- [x] Release fine-tuning code.
-- [x] Release modulated training code.
-- [ ] More detailed instruction on applying MQ-Det to custom language-queried detectors. -->
-
-
+<!-- 
+- [x] COCO form -> Few shot form transform code
+- [x] Visual Feature Extraction Code
+- [x] Build Dataset from image directory
+- [x] Predict and Evaluate with the dataset
+- [ ] Multi-batch Evaluation 
+-->
 
 
 ## Preparation
@@ -76,8 +20,8 @@ MQ-Det incorporates vision queries into existing well-established language-queri
 **Environment.** 
 Init the  environment:
 ```
-git clone https://github.com/YifanXu74/MQ-Det.git
-cd MQ-Det
+git clone https://github.com/YifanXu74/MQ-Det_inference.git
+cd MQ-Det_inference
 conda create -n mqdet python=3.9 -y
 conda activate mqdet
 bash init.sh
@@ -86,7 +30,9 @@ bash init.sh
 The implementation environment in the paper is python==3.9, torch==2.0.1, GCC==8.3.1, CUDA==11.7. Several  potential errors and their solutions are presented in [DEBUG.md](DEBUG.md)
 <!-- THC/THC.h error with high torch version can be solved by [link1](https://github.com/NVIDIA/DeepLearningExamples/issues/1090) and [link2](https://aitechtogether.com/python/76425.html) -->
 
-**Data.**  Prepare ``Objects365`` (for modulated pre-training), ``LVIS`` (for evaluation), and ``ODinW`` (for evaluation) benchmarks following [DATA.md](DATA.md).
+**Data.**  Prepare any dataset for Object Detection in COCO Format
+
+
 
 **Initial Weight.** MQ-Det is build upon frozen language-queried detectors. To conduct modulated pre-training, download corresponding pre-trained model weights first.
 

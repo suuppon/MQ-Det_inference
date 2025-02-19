@@ -5,6 +5,8 @@ from maskrcnn_benchmark.config import cfg
 from maskrcnn_benchmark.modeling.detector import build_detection_model
 from maskrcnn_benchmark.utils.checkpoint import DetectronCheckpointer
 from maskrcnn_benchmark.data import make_data_loader
+from maskrcnn_benchmark.utils.visualizer import Visualizer
+from maskrcnn_benchmark.engine.inference import predict
 
 import os
 import json
@@ -15,7 +17,7 @@ from tqdm import tqdm
 
 import argparse
 
-from utils import load_images_and_targets, save_query_bank, print_class_distribution
+from utils import load_images_and_targets, print_class_distribution
 
 class Predictor:
     def __init__(self, cfg):
@@ -39,28 +41,36 @@ class Predictor:
             query_images = self.model.extract_query(images.to(self.device), targets, query_images)
         return query_images
     
-    def set_features(self, queries, targets, save_features=False):
+    def set_features(self, queries, targets):
         query_images=defaultdict(list)
         self.features = self.extract_queries(queries, targets, query_images)
-        if save_features:
-            save_query_bank(self.features)
+        if cfg.VISION_QUERY.QUERY_BANK_SAVE_PATH != '':
+            save_name = cfg.VISION_QUERY.QUERY_BANK_SAVE_PATH
+        else:
+            save_name = 'MODEL/{}_{}shot.pth'.format(cfg.VISION_QUERY.DATASET_NAME, cfg.VISION_QUERY.NUM_SHOTS)
+        print('saving to ', save_name)
+        torch.save(query_images, save_name)
 
+        cfg.VISION_QUERY.QUERY_BANK_PATH = save_name
         print("✅ Query extraction completed!")
         # query_images : {class_num : Tensor(num_shots, 1, 256)}
         # So query_images is a dictionary with class_num as key and a tensor of shape (num_shots, 1, 256) as value
         print_class_distribution(query_images)
-    
-    def predict(self, text_prompt, image_prompt, visualize=False):
+
+    def predict(self, data_loaders, visualize=True, output_folder=None):
         # # Predict the image
-        # with torch.no_grad():
-        #     output = self.model.predict(text_prompt, image_input, self.features)
+        categories = data_loaders[0].dataset.categories
+        visualizer = Visualizer(categories) if visualize else None
         
-        # if visualize:
-        #     # Visualize the output
-        #     pass
+        for data_loader in data_loaders:
+            result = predict(self.model, 
+                         data_loader, 
+                         cfg=self.cfg, 
+                         device=self.device,
+                         output_folder=output_folder,
+                         visualizer=visualizer)
         
-        # return output
-        pass
+        return result
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch Detection to Grounding Inference")
@@ -81,12 +91,19 @@ def main():
                         help="Path to COCO dataset root")
     
     
-    parser.add_argument("--save-features",
-                        action="store_true",
-                        help="Save extracted features to disk")
+    parser.add_argument("--query_bank_path",
+                        default="MODEL/query_bank",
+                        help="Path to save the query bank")
+    parser.add_argument("--add_name",
+                        default="custom",
+                        help="Add name to the query bank")
+    
     parser.add_argument("--visualize",
                         action="store_true",
                         help="Visualize the output")
+    parser.add_argument("--output-folder",
+                        default="OUTPUT",
+                        help="Path to save the visualized output")
     
     parser.add_argument("--world-size", default=1, type=int, help="number of distributed processes")
     
@@ -106,9 +123,22 @@ def main():
     cfg.DATA.support_image_dir = support_image_dir
     cfg.DATA.query_annotation_path = query_annotation_path
     cfg.DATA.query_image_dir = query_image_dir
+    cfg.DATA.DATASET_NAME = args.add_name
+    num_shots = None
+    
+    try:
+        num_shots = int(args.data_root.split("_")[-1].replace("shot", ""))
+    except:
+        pass
+        
+    cfg.VISION_QUERY.DATASET_NAME = args.add_name
+    cfg.VISION_QUERY.NUM_SHOTS = num_shots
     
     # 1. Load configuration file
     cfg.merge_from_file(args.config_file)
+    
+    if not os.path.exists(args.query_bank_path):
+        os.makedirs(args.query_bank_path)
     
     # 2. Initialize model and load weights
     predictor = Predictor(cfg)
@@ -142,15 +172,14 @@ def main():
     # Convert images and targets to tensors
     images, targets = load_images_and_targets(image_ids, image_id_to_path, image_id_to_annotations, device="cuda", category_mapping=category_mapping)
 
-    predictor.set_features(images, targets, save_features=args.save_features)
+    predictor.set_features(images, targets)
     
     # 6. Build DataLoader from Query Images
     query_data_loader = make_data_loader(cfg, is_train=False, is_distributed=False, inference_mode=True)
     
     # 7. Detect Objects in Query Images
     #TODO: Implement This
-    # for query_images, query_targets in query_data_loader:
-    #    predictor.predict(query_images, query_targets, visualize=args.visualize)
+    result = predictor.predict(query_data_loader, visualize=args.visualize, output_folder=args.output_folder)
     
 
 if __name__ == "__main__":
